@@ -1,0 +1,116 @@
+---
+title: "Cyclistic Bike-Share Case Study"
+author: "Colton Williams"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(lubridate)
+library(scales)
+```
+
+## Introduction
+Cyclistic’s marketing team is focused on converting casual riders into annual members.  
+This analysis compares Q1 2019 and Q1 2020 trip data to identify usage patterns.
+
+## Data Import
+```{r}
+df19 <- read_csv("Divvy_Trips_2019_Q1.csv")
+df20 <- read_csv("Divvy_Trips_2020_Q1.csv")
+```
+
+## Data Cleaning
+```{r}
+clean_2019 <- df19 %>%
+  rename(started_at = start_time, ended_at = end_time,
+         start_station_name = from_station_name,
+         end_station_name = to_station_name,
+         member_casual = usertype) %>%
+  mutate(member_casual = recode(member_casual,
+                                "Subscriber" = "member",
+                                "Customer" = "casual"),
+         started_at = ymd_hms(started_at),
+         ended_at = ymd_hms(ended_at),
+         ride_length = as.numeric(difftime(ended_at, started_at, units = "mins")))
+
+clean_2020 <- df20 %>%
+  mutate(started_at = ymd_hms(started_at),
+         ended_at = ymd_hms(ended_at),
+         ride_length = as.numeric(difftime(ended_at, started_at, units = "mins")))
+
+trips <- bind_rows(clean_2019, clean_2020) %>%
+  filter(ride_length > 1, ride_length < 1440) %>%
+  mutate(day_of_week = wday(started_at, label = TRUE),
+         month = floor_date(started_at, "month"))
+
+# Aggregated data for charts
+rides_by_day <- trips %>% count(day_of_week, member_casual, name = "rides")
+avg_len_by_day <- trips %>% group_by(day_of_week, member_casual) %>% summarise(avg_ride_length_min = mean(ride_length))
+monthly_volume <- trips %>% count(month, member_casual, name = "rides")
+top_stations <- trips %>% count(member_casual, start_station_name, sort = TRUE)
+```
+
+## Analysis & Visualizations
+
+### Chart 1: Rides by Day of Week
+```{r chart1, fig.width=7, fig.height=5}
+ggplot(rides_by_day, aes(x = day_of_week, y = rides, fill = member_casual)) +
+  geom_col(position = position_dodge()) +
+  labs(title = "Rides by Day of Week: Members vs Casual", 
+       x = "Day of Week", 
+       y = "Number of Rides") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 6))
+```
+
+### Chart 2: Average Ride Length by Day
+```{r chart2, fig.width=7, fig.height=5}
+ggplot(avg_len_by_day, aes(x = day_of_week, y = avg_ride_length_min, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  labs(title = "Average Ride Length by Day: Members vs Casual",
+       x = "Day of Week", 
+       y = "Avg Ride Length (min)") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(size = 6))
+```
+
+### Chart 3: Monthly Ride Volume
+```{r chart3, fig.width=7, fig.height=5}
+ggplot(monthly_volume, aes(x = month, y = rides, color = member_casual, group = member_casual)) + 
+  geom_line() + 
+  geom_point() + 
+  labs(title = "Monthly Ride Volume: Members vs Casual", 
+       x = "Month", 
+       y = "Number of Rides",
+       color = "Rider Type") + 
+  scale_y_continuous(labels = scales::comma_format(accuracy = 1), 
+                     breaks = scales::breaks_pretty()) + 
+  theme_minimal()
+```
+
+### Chart 4: Top 10 Stations by Rider Type
+```{r chart4, fig.width=7, fig.height=5}
+top10_stations <- top_stations %>% group_by(member_casual) %>% slice_max(n, n = 10)
+
+ggplot(top10_stations, aes(x = reorder(start_station_name, n), y = n, fill = member_casual)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~member_casual, scales = "free") +
+  labs(title = "Top 10 Start Stations: Members vs Casual",
+       x = "Station", 
+       y = "Number of Rides") +
+  theme_minimal()
+```
+
+## Key Findings
+- Members ride more on weekdays, casuals on weekends  
+- Casual riders have longer ride durations  
+- Members favor commuter stations; casuals favor tourist stations  
+
+## Recommendations
+- Weekend promos to convert casual riders  
+- Employer partnerships for memberships  
+- QR-code promos at top casual stations  
